@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="Hugo 0.76.5" />
+
+
+<title>How to Beat Analysts and the Stock Market with Machine Learning - A Hugo website</title>
+<meta property="og:title" content="How to Beat Analysts and the Stock Market with Machine Learning - A Hugo website">
+
+
+  <link href='/favicon.ico' rel='icon' type='image/x-icon'/>
+
+
+
+  
+
+
+
+
+
+
+
+
+<link href='//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css' rel='stylesheet' type='text/css' />
+
+
+
+<link rel="stylesheet" href="/css/fonts.css" media="all">
+<link rel="stylesheet" href="/css/main.css" media="all">
+
+
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header class="header">
+        <nav class="nav">
+  <a href="/" class="nav-logo">
+    <img src="/images/logo.png"
+         width="50"
+         height="50"
+         alt="Logo">
+  </a>
+
+  <ul class="nav-links">
+    
+    <li><a href="/about/">About</a></li>
+    
+    <li><a href="https://github.com/rstudio/blogdown">GitHub</a></li>
+    
+    <li><a href="https://twitter.com/rstudio">Twitter</a></li>
+    
+  </ul>
+</nav>
+
+      </header>
+
+
+<main class="content" role="main">
+
+  <article class="article">
+    
+    <span class="article-duration">7 min read</span>
+    
+
+    <h1 class="article-title">How to Beat Analysts and the Stock Market with Machine Learning</h1>
+
+    
+    <span class="article-date">2020-10-23</span>
+    
+
+    <div class="article-content">
+      
+<link href="index_files/anchor-sections/anchor-sections.css" rel="stylesheet" />
+<script src="index_files/anchor-sections/anchor-sections.js"></script>
+
+
+<p>Corporate profitability is crucial signal for investment and business valuation as they are a key indicator of a company’s success and the development of its equity. Here, we present a machine learning method for Bank’s Net Interest Income (NII) nowcasting based on completely publicly available data that can outperform human analysts.</p>
+<p>Nowcasting is a reasonably new word; at least in economic finance. It is either the opposite of forecasting or simply a pun on the word ‘forecasting’. The term nowcasting is a contraction of ‘now’ and ‘forecasting’.
+For this purpose, finance analysts generate such forecasts using their individual methodologies, which are combined to an Analyst Consensus forecast. These Analyst Consensus forecasts are provided shortly after the beginning of each quarter</p>
+<div id="variables-used-for-earnings-forecasts" class="section level1">
+<h1>Variables used for earnings forecasts</h1>
+<p>We consider an extensive collection of public signals available at each point in time, summarized into three categories: firm specific variables, macroeconomic variables, and industry specific variables.</p>
+<div id="firm-fundamentals" class="section level2">
+<h2>Firm fundamentals</h2>
+<p>We consider banks fundamental variables related to Net Interest Income. We obtain the data from quarterly financial reports of the banks</p>
+<ol style="list-style-type: decimal">
+<li>Total Deposits</li>
+<li>Net Loans</li>
+<li>Securities Held To Maturity</li>
+<li>Loan Loss Allowances</li>
+<li>Interest Bearing Deposits</li>
+<li>Other Deposits</li>
+<li>Other Short Term Borrowings</li>
+<li>Securities For Sale</li>
+<li>Total Investment Securities</li>
+<li>Investment to Deposit Ratio</li>
+<li>Investment to Deposit Ratio(HTM Securities)</li>
+<li>Investment to Deposit Ratio(AFS Securities)</li>
+<li>Advances to Deposit Ratio</li>
+</ol>
+</div>
+<div id="banking-industry-variablebalance-sheet-items" class="section level2">
+<h2>Banking Industry Variable(Balance Sheet Items)</h2>
+<p>We consider several banking industry variables that are related to Net Interest Income. We Obtain the form the data provided by State Bank of Pakistan(SBP)</p>
+<ol style="list-style-type: decimal">
+<li>Investment to Deposit Ratio</li>
+<li>Advances to Deposit Ratio</li>
+<li>Advances Net of Provision</li>
+<li>Balances with Other Banks</li>
+<li>Borrowings</li>
+<li>Investments</li>
+<li>Provisions</li>
+<li>Bills Payable</li>
+<li>Deposits And Other Accounts</li>
+<li>Lending To Financial Institutions</li>
+<li>Sub Ordinated Loans</li>
+</ol>
+</div>
+<div id="macroeconomic-variables" class="section level2">
+<h2>Macroeconomic variables</h2>
+<p>We consider several macroeconomic variables that can affect banks profitability. We obtain the from the real-time data set provided by State Bank of Pakistan(SBP).</p>
+<ol style="list-style-type: decimal">
+<li>WTI-Oil(USD/bbl)</li>
+<li>KIBOR</li>
+<li>10 Year PKRV</li>
+<li>Yield Spread</li>
+</ol>
+<p>Read the data:</p>
+<pre class="r"><code>library(tidyverse)
+library(janitor)
+library(recipes)
+library(RCurl)
+library(zoo)
+library(caret)
+
+url_data &lt;- getURL(
+  &quot;https://raw.githubusercontent.com/AzamYahya/bank_nii/main/data/NII_df.csv&quot;)
+banking_df &lt;- read.csv(text = url_data)
+
+colnames(banking_df) &lt;- make_clean_names(colnames(banking_df))</code></pre>
+<p>The next step to create ratios from firms and indutry fundamentals. These includes <a href="https://www.investopedia.com/terms/l/loan-to-deposit-ratio.asp"><em>Advances-to-Deposit Ratio</em></a> and <em><a href="https://www.coursehero.com/file/p56e8ap/Investment-to-Deposit-Ratio-Investments-X-100-Deposits-2013-2012-2011-166195619/">Investment-to-Deposit Ratio</a></em>. <em><a href="https://www.investopedia.com/terms/y/yieldspread.asp#:~:text=A%20yield%20spread%20is%20the,(bps)%20or%20percentage%20points.">Yield Spread</a></em> is another important metric which is difference between the quoted rate of return on different debt instruments which often have varying maturities. We calculate yield spread as yeild spread between <strong>10-Year PIB</strong> and <strong>3-month Kibor</strong>.</p>
+<pre class="r"><code>banking_df &lt;- banking_df %&gt;% mutate(adr = net_loans/total_deposits) %&gt;%  #ADR
+  mutate(idr = total_investment_securities/total_deposits) %&gt;% #IDR
+  mutate(idr_htm =  securities_held_to_maturity/total_deposits) %&gt;% #HTM/Deposit
+  mutate(idr_afs = securities_for_sale/total_deposits) %&gt;% #AFS/Depsoits
+  #industry IDR
+  mutate(adr_industry = advances_net_of_provision/deposits_and_other_accounts) %&gt;% 
+  ###industry IDR
+  mutate(idr_industry = investments/deposits_and_other_accounts) %&gt;% 
+  #### Yeild Spread
+  mutate(sec_spread = pakistan10ybm - pak3mbm) %&gt;% 
+  ##remove banking industry non-important features
+  select(-deferred_tax_assets, - deferred_tax_liabilities)</code></pre>
+<p>After creating ratio’s, it now time to create variable that incorporates the quarter effect. We will also remove outliers and will remove observation before <strong>2013 Q2</strong> due to non-availability of data for all features.</p>
+<pre class="r"><code>##create a quarter variables
+
+banking_df2 &lt;- banking_df %&gt;% separate(quarter, c(&quot;year&quot;, &quot;quarterly&quot;), remove = F) %&gt;%
+  select(-year) %&gt;% mutate(quarterly = as.factor(quarterly)) %&gt;% 
+  mutate(banks = as.factor(banks)) 
+
+###remove outlier
+
+remove_outliers &lt;- function(x, na.rm = TRUE, ...) {
+  qnt &lt;- quantile(x, probs=c(.1, .9), na.rm = na.rm, ...)
+  H &lt;- 1.5 * IQR(x, na.rm = na.rm)
+  y &lt;- x
+  y[x &lt; (qnt[1] - H)] &lt;- NA
+  y[x &gt; (qnt[2] + H)] &lt;- NA
+  y
+}
+
+banking_df2$quarter &lt;- as.yearqtr(banking_df2$quarter)
+
+banking_df2 &lt;- banking_df2 %&gt;% group_by(banks) %&gt;% 
+  fill(-c(&quot;banks&quot;, &quot;quarterly&quot;, &quot;quarter&quot;, &quot;net_interest_income&quot;),
+       .direction = &quot;down&quot;) %&gt;% 
+  filter(quarter &gt; &quot;2013 Q2&quot;) %&gt;% 
+  filter(quarter != as.yearqtr(Sys.Date())) %&gt;% 
+  group_by(banks) %&gt;% 
+  mutate_at(vars(-one_of(&quot;banks&quot;, &quot;quarter&quot;, &quot;quarterly&quot;, &quot;net_interest_income&quot;)),
+            ~ remove_outliers(.))</code></pre>
+</div>
+</div>
+<div id="model-building" class="section level1">
+<h1>Model Building</h1>
+<p>After getting the data, it now time for feature selection and engineering which aimes at building better models by focusing on the predictors. <em>Better</em> depends on the context of the problem but most likely involves the following factors: accuracy, simplicity, and robustness.</p>
+<p>To acheive better models, we engineering the features by doing the following step:</p>
+<ol style="list-style-type: decimal">
+<li>Remove Zero Variance Variables</li>
+<li>Remove near Zero Variance Variables</li>
+<li>Impute the Missing Values</li>
+<li>Power transformation using Yeo-Johnson transformation</li>
+<li>Create Lag variable for outcome variable</li>
+<li>Create 3-period moving average</li>
+<li>One-hot encoding for incorporating Categorical effect of individual bank and quarter</li>
+</ol>
+<p>We will use <em><a href="https://www.tidymodels.org/start/recipes/">recipes library</a></em> to engineer the features. We and use the <strong>3Q 2020</strong> for testing our predic</p>
+<pre class="r"><code>
+library(recipes)
+#intial recipe
+bank_recipe &lt;- recipe(net_interest_income ~ ., data = banking_df2)
+library(themis)
+##because some variable are negative use Yeo Johnson transformation
+#remember to inverse the yeo johnson for interpretation
+near_zero_variance &lt;- bank_recipe %&gt;%
+  step_rm(&quot;quarter&quot;) %&gt;% #remove timestamp
+  step_zv(all_numeric()) %&gt;% # remove zero variance
+  step_nzv(all_numeric()) #remove near zero variance
+library(quantrecipes)
+transformation &lt;- near_zero_variance %&gt;%
+  step_bagimpute(all_numeric(), -net_interest_income) %&gt;% 
+  step_YeoJohnson(all_numeric(), -net_interest_income) %&gt;% 
+  step_nzv(all_numeric()) %&gt;% 
+  #step_log(all_outcomes()) %&gt;% 
+  step_lag(all_outcomes(), lag = 1:3)
+
+train_obj &lt;- prep(transformation, training = banking_df2)
+train_data &lt;- bake(train_obj, banking_df2)
+
+
+train_data &lt;- train_data %&gt;% group_by(banks) %&gt;% 
+  mutate_at(vars(-matches(&quot;banks|quarterly|net_interest_income&quot;)),
+            ~ runMean(., n = 3))
+
+###get the last row of every bank
+to_be_predicted &lt;- train_data %&gt;% group_by(banks) %&gt;% 
+  slice(n())
+
+##One hot encoding for categorical variable
+
+dmy &lt;- dummyVars(&quot; ~ .&quot;, data = to_be_predicted)
+binary_df &lt;- data.frame(predict(dmy, newdata = to_be_predicted))</code></pre>
+<p>We use the last row to test our prediction</p>
+<pre class="r"><code>##remove last row from train
+
+train_data &lt;- train_data %&gt;% group_by(banks) %&gt;% 
+  slice(-n()) %&gt;% na.omit()
+
+##One hot encoding for categorical variable
+
+dmy &lt;- dummyVars(&quot; ~ .&quot;, data = train_data)
+train_data &lt;- data.frame(predict(dmy, newdata = train_data))</code></pre>
+<p>Now to train model, we use <strong><a href="https://cran.r-project.org/web/packages/Cubist/vignettes/cubist.html">Cubist model</a></strong> which is a rule based model.</p>
+<pre class="r"><code>set.seed(100)
+cubist_fit &lt;- train(net_interest_income~. ,data = train_data,
+                    method = &quot;cubist&quot;)
+
+cubist &lt;- data.frame(bank = unique(banking_df$banks), cubist = predict(cubist_fit, binary_df)/1000000)
+
+##change name into PSX names
+
+cubist &lt;- cubist %&gt;% 
+  mutate(cubist = round(cubist,0)) %&gt;% 
+  mutate(bank = gsub(&quot;.KA&quot;, &quot;&quot;, bank)) %&gt;% 
+  mutate(bank = case_when(.$bank == &quot;ASBK&quot; ~ &quot;AKBL&quot;,
+                          .$bank == &quot;BKEQ&quot; ~&quot;BAHL&quot;,
+                          .$bank == &quot;FYBL&quot; ~ &quot;FABL&quot;,
+                          .$bank == &quot;NBPK&quot; ~ &quot;NBP&quot;,
+                          TRUE ~ as.character(bank)
+                          ))</code></pre>
+<p>Now to compare the result with actual output. We can see in the table below that Machine Learning model outperforms analyst’s estimate of 3Q2020 Net Interest Income.</p>
+<pre class="r"><code>url_data &lt;- getURL(
+  &quot;https://raw.githubusercontent.com/AzamYahya/bank_nii/main/data/brokers_esimate_csv.csv&quot;)
+sellside_est &lt;- read.csv(text = url_data, stringsAsFactors = F)
+
+colnames(sellside_est) &lt;- make_clean_names(colnames(sellside_est))
+
+print(sellside_est)
+##   bank topline_securities intermarket_securities optimus_capital_management
+## 1  ABL                 NA                  10746                         NA
+## 2 AKBL                 NA                     NA                         NA
+## 3 BAFL               9538                  10794                      10830
+## 4 BAHL              13996                     NA                      13029
+## 5  MCB              16914                  18013                      17571
+## 6  NBP              25307                     NA                         NA
+## 7  HBL                 NA                  27800                      31754
+## 8  UBL              18100                  18878                      18862
+##   arif_habib_securities actual_net_interest_income
+## 1                 11188                      12174
+## 2                  6527                       8073
+## 3                  9561                      11104
+## 4                    NA                      17017
+## 5                 16181                      20547
+## 6                 25016                      31449
+## 7                    NA                      35709
+## 8                 17921                      19656
+###join the our estimates with the actual and brokers estimates
+
+combine_df &lt;- sellside_est %&gt;% mutate_at(vars(-one_of(&quot;bank&quot;)),
+                                         ~ as.numeric(as.character(.))) %&gt;%
+  
+  pivot_longer(names_to = &quot;broker&quot;, values_to = &quot;estimate&quot;, -c(
+    &quot;bank&quot;, &quot;actual_net_interest_income&quot;)) %&gt;%
+  group_by(bank) %&gt;% summarise(avg_est = mean(estimate, na.rm = T),
+                               actual_net_interest_income = mean(
+                                 actual_net_interest_income, na.rm = T
+                               )) %&gt;% 
+  left_join(.,cubist, by = &quot;bank&quot;) %&gt;% 
+  rename(`Broker Estimate` = avg_est,
+         `Actual NII` = actual_net_interest_income,
+         `ML Model` = cubist)
+
+knitr::kable(combine_df, caption = &quot;Net Interest Income(PKR MN)&quot;) %&gt;%  kableExtra::kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;, &quot;responsive&quot;))
+## Warning in kableExtra::kable_styling(., bootstrap_options = c(&quot;striped&quot;, :
+## Please specify format in kable. kableExtra can customize either HTML or LaTeX
+## outputs. See https://haozhu233.github.io/kableExtra/ for details.</code></pre>
+<table>
+<caption><span id="tab:unnamed-chunk-6">Table 1: </span>Net Interest Income(PKR MN)</caption>
+<thead>
+<tr class="header">
+<th align="left">bank</th>
+<th align="right">Broker Estimate</th>
+<th align="right">Actual NII</th>
+<th align="right">ML Model</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">ABL</td>
+<td align="right">10967.00</td>
+<td align="right">12174</td>
+<td align="right">12618</td>
+</tr>
+<tr class="even">
+<td align="left">AKBL</td>
+<td align="right">6527.00</td>
+<td align="right">8073</td>
+<td align="right">9428</td>
+</tr>
+<tr class="odd">
+<td align="left">BAFL</td>
+<td align="right">10180.75</td>
+<td align="right">11104</td>
+<td align="right">11650</td>
+</tr>
+<tr class="even">
+<td align="left">BAHL</td>
+<td align="right">13512.50</td>
+<td align="right">17017</td>
+<td align="right">15352</td>
+</tr>
+<tr class="odd">
+<td align="left">HBL</td>
+<td align="right">29777.00</td>
+<td align="right">35709</td>
+<td align="right">34984</td>
+</tr>
+<tr class="even">
+<td align="left">MCB</td>
+<td align="right">17169.75</td>
+<td align="right">20547</td>
+<td align="right">20306</td>
+</tr>
+<tr class="odd">
+<td align="left">NBP</td>
+<td align="right">25161.50</td>
+<td align="right">31449</td>
+<td align="right">31920</td>
+</tr>
+<tr class="even">
+<td align="left">UBL</td>
+<td align="right">18440.25</td>
+<td align="right">19656</td>
+<td align="right">22596</td>
+</tr>
+</tbody>
+</table>
+<p>If we plot the absolute variance, the machine learning model average variance is about 5% whereas average variance for analyst estimate is approx 15%.</p>
+<pre class="r"><code>combine_df %&gt;% 
+    mutate(`Broker Variance` = abs((`Actual NII` - `Broker Estimate`)/`Actual NII`)*100, `ML Variance` = abs((`Actual NII` - `ML Model`)/`Actual NII`)*100) %&gt;% 
+    select(bank, `Broker Variance`, `ML Variance`) %&gt;% 
+    pivot_longer(names_to = &quot;Source&quot;, values_to = &quot;variance&quot;, -bank) %&gt;% 
+    ggplot(aes(x = bank, y = variance, group = Source, colour = Source)) +              geom_point()+ geom_line() + geom_hline(yintercept = 0)+
+    ggthemes::theme_pander()+ ggtitle(&quot;Absolute Variance of Broker &amp; ML Model&quot;)+theme(axis.title.x = element_blank(), legend.title = element_blank())+ labs(y = &quot;%&quot;)</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>Comparing the result shows that Cubist algortihms has outperformed on average every bank except UBL. The pricing of assets relies significantly on the forecasts of associated cashflows. Analysts’ forecasts of earnings are often used as a measure of expectations, despite the common knowledge that these forecasts are on average biased upward. Namely, a structural misalignment obtains between these earnings forecasts and their subsequent lower realizations.</p>
+<p>This new measure is useful not only as an input to asset-pricing exercises but also as an available real-time benchmark against which other forecasts can be compared. In addition to these asset-pricing results, our findings also have critical implications in corporate finance. Managers of firms for which the earnings forecast is most upward-biased issue more stocks. This finding indicates that managers are at least partially aware of analyst biases or the associated influence on asset prices.</p>
+<p>This research applies machine learning approach to net interest income, and the approach can easily be extended to other variables and in other sectors.</p>
+</div>
+
+    </div>
+  </article>
+
+  
+
+
+</main>
+
+      <footer class="footer">
+        <ul class="footer-links">
+          <li>
+            <a href="/index.xml" type="application/rss+xml" target="_blank">RSS feed</a>
+          </li>
+          <li>
+            <a href="https://gohugo.io/" class="footer-links-kudos">Made with <img src="/images/hugo-logo.png" alt="Img link to Hugo website" width="22" height="22"></a>
+          </li>
+        </ul>
+      </footer>
+
+    </div>
+    
+
+
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+
+
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/r.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/yaml.min.js"></script>
+<script>hljs.configure({languages: []}); hljs.initHighlightingOnLoad();</script>
+
+
+
+    
+<script src="/js/math-code.js"></script>
+<script async src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+
+
+    
+  </body>
+</html>
+
